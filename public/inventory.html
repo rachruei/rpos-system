@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Inventory</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Sticky top navigation: left icon, centered title, right add icon -->
+  <nav class="top-nav">
+      <div class="nav-inner">
+      <div class="nav-left">
+        <!-- Title moved to the left (where Back used to be) -->
+        <h1>Inventory</h1>
+      </div>
+      <div class="nav-right">
+        <div id="whoami-badge" class="whoami-badge" style="display:none"></div>
+        <!-- add button then Back button on the right side -->
+        <a class="back-link" href="create-product.html" id="inventory-add">&#43;</a>
+        <a class="back-link" href="dashboard.html">Back</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="page-content">
+    <main class="inventory-main">
+      <div class="inventory-grid" id="inventory-grid">
+      </div>
+    </main>
+    <script>
+      // Fetches the products from server along with the render cards
+      async function loadProducts() {
+        try {
+          // include username from localStorage if available so that the server can filter inventory per-user
+          let url = '/products';
+          try {
+            const uname = localStorage.getItem('username');
+            if (uname) url += '?username=' + encodeURIComponent(uname);
+          } catch(e){}
+          const res = await fetch(url);
+          const products = await res.json();
+          const container = document.getElementById('inventory-grid');
+          container.innerHTML = '';
+
+          // If there's a recently uploaded preview saved by the create page, this will show it immediately unless the server has already returned the same item.
+          let recent = null;
+          try {
+            const raw = localStorage.getItem('recentProductPreview');
+            if (raw) recent = JSON.parse(raw);
+          } catch (e) { recent = null; }
+
+          // renders preview first if server doesn't already include it
+          if (recent && recent.preview) {
+            const already = products.some(p => p.title && p.title === recent.title && p.image);
+            if (!already) {
+              const card = document.createElement('div');
+              card.className = 'inventory-card';
+              const thumb = document.createElement('div');
+              thumb.className = 'card-thumb';
+              const img = document.createElement('img');
+              img.src = recent.preview;
+              img.alt = recent.title || 'preview';
+              img.style.opacity = '0';
+              img.style.transition = 'opacity 0.2s ease-in';
+              img.onload = function() { this.style.opacity = '1'; };
+              thumb.appendChild(img);
+              // edit button for preview (no id available for preview)
+              const editBtnPreview = document.createElement('a');
+              editBtnPreview.className = 'edit-btn';
+              editBtnPreview.href = '#';
+              editBtnPreview.textContent = 'Edit';
+              thumb.appendChild(editBtnPreview);
+              const label = document.createElement('div');
+              label.className = 'card-label';
+              label.textContent = recent.title || 'Product (pending)';
+              const stock = document.createElement('div');
+              stock.className = 'card-stock';
+              stock.textContent = 'Stock : ?';
+              card.appendChild(thumb);
+              card.appendChild(label);
+              card.appendChild(stock);
+              container.appendChild(card);
+            }
+            // clears the preview so it doesn't persist
+            try { localStorage.removeItem('recentProductPreview'); } catch (e) {}
+          }
+
+          // A helper to add or increment draft item
+          function addOrIncrementDraft(prod){
+            try {
+              const raw = localStorage.getItem('transactionsDraft') || '[]';
+              const arr = JSON.parse(raw);
+              const price = prod.price || prod.amount || 0;
+              const existing = arr.find(i => String(i.id) === String(prod.id));
+              if (existing){
+                existing.qty = (existing.qty || 1) + 1;
+              } else {
+                arr.push({ id: prod.id, title: prod.title, price: price, qty: 1 });
+              }
+              localStorage.setItem('transactionsDraft', JSON.stringify(arr));
+            } catch (e) { console.error('failed to add draft item', e); }
+            // returns to transactions page
+            window.location.href = 'transactions.html';
+          }
+
+          const params = new URLSearchParams(window.location.search);
+          products.forEach(p => {
+            const card = document.createElement('div');
+            card.className = 'inventory-card';
+
+            const thumb = document.createElement('div');
+            thumb.className = 'card-thumb';
+            if (p.image) {
+              const img = document.createElement('img');
+              img.src = '/uploads/' + p.image;
+              img.alt = p.title;
+              img.style.opacity = '0';
+              img.style.transition = 'opacity 0.2s ease-in';
+              img.onload = function() { this.style.opacity = '1'; };
+              thumb.appendChild(img);
+              // edit button overlay (this is a link to edit-product.html?id=...)
+              const editBtn = document.createElement('a');
+              editBtn.className = 'edit-btn';
+              editBtn.href = 'edit-product.html?id=' + encodeURIComponent(p.id);
+              editBtn.textContent = 'Edit';
+              thumb.appendChild(editBtn);
+              // delete button overlay (top-left of the image) - appears when the mouse hovers
+              const deleteBtn = document.createElement('button');
+              deleteBtn.className = 'delete-btn';
+              deleteBtn.type = 'button';
+              deleteBtn.title = 'Delete product';
+              deleteBtn.textContent = '×';
+              deleteBtn.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                ev.preventDefault();
+                console.log('Delete button clicked for product:', p.id, p.title);
+                const ok = confirm('Delete this product? This cannot be undone.');
+                if (!ok) return;
+                try {
+                  // include username from localStorage so server can authorize
+                  let url = '/products/' + encodeURIComponent(p.id);
+                  const username = localStorage.getItem('username');
+                  console.log('Current username from localStorage:', username);
+                  if (username) url += '?username=' + encodeURIComponent(username);
+                  console.log('DELETE request URL:', url);
+                  
+                  const resp = await fetch(url, { method: 'DELETE' });
+                  console.log('DELETE response status:', resp.status);
+                  
+                  if (resp.ok) {
+                    const result = await resp.json();
+                    console.log('Delete successful:', result);
+                    alert('Product deleted successfully!');
+                    // reload product list
+                    loadProducts();
+                  } else if (resp.status === 403) {
+                    alert('Not allowed to delete this product.');
+                  } else {
+                    const body = await resp.text();
+                    console.error('Delete failed', resp.status, body);
+                    alert('Failed to delete product: ' + body);
+                  }
+                } catch (e) {
+                  console.error('Delete error', e);
+                  alert('Failed to delete product: ' + e.message);
+                }
+              });
+              thumb.appendChild(deleteBtn);
+            }
+
+            const label = document.createElement('div');
+            label.className = 'card-label';
+            label.textContent = p.title || 'Product';
+
+            const stock = document.createElement('div');
+            stock.className = 'card-stock';
+            stock.textContent = 'Stock : ' + (p.stock || '0');
+
+            card.appendChild(thumb);
+
+            // If inventory was opened from Transactions page, this will show Add button on the right
+            if (params.get('to') === 'transactions'){
+              const infoRow = document.createElement('div');
+              infoRow.className = 'inventory-card-info';
+              
+              const leftInfo = document.createElement('div');
+              leftInfo.className = 'inventory-card-left';
+              leftInfo.appendChild(label);
+              leftInfo.appendChild(stock);
+              
+              const addBtn = document.createElement('button');
+              addBtn.textContent = 'Add';
+              addBtn.className = 'btn-inventory-add';
+              
+              // Disable the button if the stock is zero
+              const stockValue = Number(p.stock) || 0;
+              if (stockValue <= 0) {
+                addBtn.disabled = true;
+                addBtn.style.opacity = '0.5';
+                addBtn.style.cursor = 'not-allowed';
+              } else {
+                addBtn.addEventListener('click', (ev) => {
+                  ev.stopPropagation();
+                  addOrIncrementDraft(p);
+                });
+              }
+              
+              infoRow.appendChild(leftInfo);
+              infoRow.appendChild(addBtn);
+              card.appendChild(infoRow);
+
+              // Only makes cards clickable if the stock is available
+              if (stockValue > 0) {
+                card.addEventListener('click', (ev) => {
+                  const tag = ev.target.tagName.toLowerCase();
+                  if (tag === 'a' || tag === 'button') return;
+                  addOrIncrementDraft(p);
+                });
+              }
+            } else {
+              card.appendChild(label);
+              card.appendChild(stock);
+            }
+
+            container.appendChild(card);
+          });
+        } catch (err) {
+          console.error('Failed to load products', err);
+        }
+      }
+
+      async function fetchWhoami(){
+        try{
+          const badge = document.getElementById('whoami-badge');
+          // Prefer localStorage username (set after login redirect). this will Fallback to server whoami.
+          try {
+            const uname = localStorage.getItem('username');
+            if (uname) {
+              badge.textContent = uname;
+              badge.style.display = 'inline-flex';
+              return;
+            }
+          } catch(e){}
+          try {
+            const res = await fetch('/whoami');
+            if (!res.ok) return;
+            const j = await res.json();
+            if (j && j.username){
+              badge.textContent = j.username;
+              badge.style.display = 'inline-flex';
+            } else {
+              badge.style.display = 'none';
+            }
+          } catch(e){}
+        } catch(e){ /* ignore */ }
+      }
+
+      window.addEventListener('DOMContentLoaded', () => { fetchWhoami(); loadProducts(); });
+    </script>
+  </div>
+</body>
+</html>

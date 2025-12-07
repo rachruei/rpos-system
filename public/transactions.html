@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Transactions</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="top-nav">
+    <div class="nav-inner">
+      <div class="nav-left"><h1>Transactions</h1></div>
+      <div class="nav-right"><a class="back-link" href="dashboard.html">Back</a></div>
+    </div>
+  </nav>
+
+  <div class="page-content">
+    <main class="history-main">
+      <div class="title-row">
+        <div class="title" style="margin:0">New Order</div>
+        <a href="inventory.html?to=transactions" class="btn btn-add-product">Add Product</a>
+      </div>
+
+
+      <div class="history-container" id="transactions-list">
+        <div class="transactions-header">
+          <div class="header-product">Product</div>
+          <div class="header-price">Price</div>
+          <div class="header-qty">QTY</div>
+          <div class="header-total">Total</div>
+        </div>
+
+      </div>
+      <!-- Grand total footer -->
+      <div class="transactions-footer">
+        <div class="label">Total:</div>
+        <div id="grand-total" class="grand-total-value">IDR 0</div>
+      </div>
+      
+      <!-- Complete order bar -->
+      <div class="complete-order-bar">
+        <button id="complete-order" class="complete-order-btn">Complete Order?</button>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // Render draft products placed into localStorage by inventory when returning from "Add Product"
+    async function renderDraftItems(){
+      const container = document.getElementById('transactions-list');
+      container.innerHTML = '';
+      let draft = [];
+      try { draft = JSON.parse(localStorage.getItem('transactionsDraft') || '[]'); } catch(e){ draft = []; }
+
+      // fetch current products to know available stock for each draft item
+      let productsById = {};
+      try {
+        let url = '/products';
+        try {
+          const storedUser = localStorage.getItem('username');
+          if (storedUser) url += '?username=' + encodeURIComponent(storedUser);
+        } catch(e){}
+        const prodRes = await fetch(url);
+        const products = await prodRes.json();
+        products.forEach(p => { productsById[String(p.id)] = p; });
+      } catch(e) {
+        console.warn('failed to load products for stock limits', e);
+      }
+      // remove draft items that refer to products that no longer exist
+      let removedMissing = false;
+      draft = draft.filter(it => {
+        if (!productsById[String(it.id)]) { removedMissing = true; return false; }
+        return true;
+      });
+      if (removedMissing) {
+        localStorage.setItem('transactionsDraft', JSON.stringify(draft));
+      }
+
+      if (!draft.length){
+        container.innerHTML = `
+          <div class="transactions-header">
+            <div class="header-product">Product</div>
+            <div class="header-price">Price</div>
+            <div class="header-qty">QTY</div>
+            <div class="header-total">Total</div>
+          </div>
+          <p class="no-transactions">No items added to the transaction yet.</p>
+        `;
+        // update grand total to 0
+        const footerEl = document.getElementById('grand-total');
+        if (footerEl) footerEl.textContent = 'IDR 0';
+        return;
+      }
+
+      // Adds the header first
+      const header = document.createElement('div');
+      header.className = 'transactions-header';
+      header.innerHTML = `
+        <div class="header-product">Product</div>
+        <div class="header-price">Price</div>
+        <div class="header-qty">QTY</div>
+        <div class="header-total">Total</div>
+      `;
+      container.appendChild(header);
+
+      let grandTotal = 0;
+      draft.forEach((it, idx) => {
+        const row = document.createElement('div');
+        row.className = 'txn-draft-row';
+        row.dataset.index = idx;
+        const qty = Number(it.qty || 1);
+        const priceNum = Number(it.price) || 0;
+        const lineTotal = qty * priceNum;
+        grandTotal += lineTotal;
+        // determines available stock for this draft item
+        const prod = productsById[String(it.id)];
+        const maxStock = prod && (typeof prod.stock !== 'undefined') ? Number(prod.stock) : Infinity;
+
+        row.innerHTML = `
+          <div class="txn-product">
+            <div style="font-weight:600">${it.title}</div>
+            ${isFinite(maxStock) ? (`<div class="stock-hint">${qty < maxStock ? `Only ${maxStock - qty} left` : `<span class=\"stock-hint max\">Max stock reached</span>`}</div>`) : ''}
+          </div>
+          <div class="txn-price">
+            IDR ${priceNum.toLocaleString()}
+          </div>
+          <div class="qty-controls">
+            <button class="qty-decrease btn" data-idx="${idx}">-</button>
+            <div class="qty-count" data-idx="${idx}">${qty}</div>
+            <button class="qty-increase btn" data-idx="${idx}" data-max="${isFinite(maxStock) ? maxStock : ''}">+</button>
+          </div>
+          <div class="txn-line-total">IDR ${lineTotal.toLocaleString()}</div>
+        `;
+        container.appendChild(row);
+
+        // creates an outside delete button positioned relative to the container
+        const del = document.createElement('button');
+        del.className = 'txn-delete-outside btn';
+        del.innerText = '×';
+        del.title = 'Remove';
+        del.dataset.idx = idx;
+        // sets the initial top position after the row is in the document
+        // computes vertically centered position
+        const top = row.offsetTop + (row.offsetHeight / 2);
+        del.style.top = top + 'px';
+        container.appendChild(del);
+      });
+
+      // attaches listeners for qty controls
+      container.querySelectorAll('.qty-decrease').forEach(b => {
+        b.addEventListener('click', (ev) => {
+          const idx = Number(ev.currentTarget.dataset.idx);
+          changeQty(idx, -1);
+        });
+      });
+      container.querySelectorAll('.qty-increase').forEach(b => {
+        const idx = Number(b.dataset.idx);
+        const maxAttr = b.getAttribute('data-max');
+        const maxVal = maxAttr ? Number(maxAttr) : Infinity;
+        const countEl = container.querySelector('.qty-count[data-idx="' + idx + '"]');
+        const currentQty = countEl ? Number(countEl.textContent) : 0;
+        if (isFinite(maxVal) && currentQty >= maxVal) b.disabled = true; else b.disabled = false;
+
+        b.addEventListener('click', (ev) => {
+          const idx2 = Number(ev.currentTarget.dataset.idx);
+          changeQty(idx2, +1);
+        });
+      });
+        // deletes (X) buttons positioned outside the container
+        container.querySelectorAll('.txn-delete-outside').forEach(b => {
+          b.addEventListener('click', (e) => {
+            const i = Number(e.target.getAttribute('data-idx'));
+            draft.splice(i, 1);
+            localStorage.setItem('transactionsDraft', JSON.stringify(draft));
+            renderDraftItems();
+          });
+        });
+
+        // repositions outside buttons to stay vertically centered if layout changed
+        container.querySelectorAll('.txn-draft-row').forEach((r, i) => {
+          const btn = container.querySelector('.txn-delete-outside[data-idx="' + i + '"]');
+          if (btn) {
+            const top = r.offsetTop + (r.offsetHeight / 2);
+            btn.style.top = top + 'px';
+          }
+        });
+
+        // updatesthe grand total display
+        const grandEl = document.getElementById('grand-total');
+        if (grandEl) grandEl.textContent = 'IDR ' + grandTotal.toLocaleString();
+
+      function changeQty(idx, delta){
+        try {
+          const raw = localStorage.getItem('transactionsDraft') || '[]';
+          const arr = JSON.parse(raw);
+          if (!arr[idx]) return;
+          // enforces stock limit when increasing
+          if (delta > 0) {
+            const prod = productsById[String(arr[idx].id)];
+            const max = prod && (typeof prod.stock !== 'undefined') ? Number(prod.stock) : Infinity;
+            if (arr[idx].qty >= max) return; // makes it so the user can't increase beyond stock
+          }
+          arr[idx].qty = Math.max(0, (arr[idx].qty || 1) + delta);
+          if (arr[idx].qty === 0) {
+            arr.splice(idx,1);
+            localStorage.setItem('transactionsDraft', JSON.stringify(arr));
+            renderDraftItems();
+            return;
+          }
+          localStorage.setItem('transactionsDraft', JSON.stringify(arr));
+          
+          // Updates only the affected elements instead of re-rendering everything
+          const newQty = arr[idx].qty;
+          const priceNum = Number(arr[idx].price) || 0;
+          const newLineTotal = newQty * priceNum;
+          
+          // Updates quantity display
+          const qtyEl = container.querySelector('.qty-count[data-idx="' + idx + '"]');
+          if (qtyEl) qtyEl.textContent = newQty;
+          
+          // Updates line total
+          const lineTotalEl = container.querySelector('.txn-draft-row[data-index="' + idx + '"] .txn-line-total');
+          if (lineTotalEl) lineTotalEl.textContent = 'IDR ' + newLineTotal.toLocaleString();
+          
+          // Updates stock hint
+          const prod = productsById[String(arr[idx].id)];
+          const maxStock = prod && (typeof prod.stock !== 'undefined') ? Number(prod.stock) : Infinity;
+          const stockHintEl = container.querySelector('.txn-draft-row[data-index="' + idx + '"] .stock-hint');
+          if (stockHintEl && isFinite(maxStock)) {
+            if (newQty < maxStock) {
+              stockHintEl.innerHTML = `Only ${maxStock - newQty} left`;
+            } else {
+              stockHintEl.innerHTML = `<span class="stock-hint max">Max stock reached</span>`;
+            }
+          }
+          
+          // Updates increase button state
+          const incBtn = container.querySelector('.qty-increase[data-idx="' + idx + '"]');
+          if (incBtn && isFinite(maxStock)) {
+            incBtn.disabled = newQty >= maxStock;
+          }
+          
+          // Recalculates and updates grand total
+          let newGrandTotal = 0;
+          arr.forEach(item => {
+            const qty = Number(item.qty || 1);
+            const price = Number(item.price) || 0;
+            newGrandTotal += qty * price;
+          });
+          const grandEl = document.getElementById('grand-total');
+          if (grandEl) grandEl.textContent = 'IDR ' + newGrandTotal.toLocaleString();
+        } catch (e) { console.error('qty change failed', e); }
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', renderDraftItems);
+    // wires complete-order button
+    document.addEventListener('DOMContentLoaded', () => {
+      const completeBtn = document.getElementById('complete-order');
+      if (!completeBtn) return;
+      completeBtn.addEventListener('click', () => {
+        try {
+          const draft = JSON.parse(localStorage.getItem('transactionsDraft') || '[]');
+          if (!draft.length) {
+            alert('No items in order.');
+            return;
+          }
+          // Saves the order data for the summary page
+          localStorage.setItem('completedOrder', JSON.stringify(draft));
+          // Clears the draft
+          localStorage.setItem('transactionsDraft', '[]');
+          // Navigates to order summary page
+          window.location.href = 'order-summary.html';
+        } catch(e) { console.error('complete order failed', e); }
+      });
+    });
+  </script>
+</body>
+</html>

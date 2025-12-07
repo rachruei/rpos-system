@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>History</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Sticky top navigation with Back button -->
+    <nav class="top-nav">
+        <div class="nav-inner">
+            <h1>History</h1>
+            <a class="back-link" href="dashboard.html">Back</a>
+        </div>
+    </nav>
+
+    <div class="page-content">
+        <div style="width:90%; max-width:900px; margin: 0 auto 20px; display:flex; gap:8px; align-items:center;">
+            <input id="txn-search" type="search" placeholder="Search transactions..." style="flex:1; padding:8px 12px; border-radius:12px; border:1px solid #ccc;">
+            <select id="txn-filter" style="padding:8px 10px; border-radius:12px; border:1px solid #ccc;">
+              <option value="all">All</option>
+              <option value="cash">Cash</option>
+              <option value="qris">QRIS</option>
+              <option value="bank transfer">Bank Transfer</option>
+            </select>
+        </div>
+
+        <div class="history-container" id="transactions-list">
+            <!-- Transactions will be rendered here -->
+    <script>
+        function formatCurrency(n){ return 'IDR ' + Number(n).toLocaleString(); }
+
+        function renderList(list){
+            const container = document.getElementById('transactions-list');
+            container.innerHTML = '';
+            if (!list.length){ container.innerHTML = '<p style="text-align:center; padding:20px; color:#666">No transactions found</p>'; return; }
+            list.forEach(t => {
+                const row = document.createElement('div');
+                row.className = 'sale-item';
+                const title = 'Sale #' + t.id;
+                
+                // Builds a product list string
+                let productList = '';
+                if (t.items && t.items.length) {
+                    productList = t.items.map(item => `${item.title} (x${item.qty})`).join(', ');
+                }
+                
+                // Builds location string
+                let locationHTML = '';
+                if (t.location && t.location.coordinates) {
+                    const lat = t.location.coordinates.lat.toFixed(6);
+                    const lng = t.location.coordinates.lng.toFixed(6);
+                    const address = t.location.address || `${lat}, ${lng}`;
+                    locationHTML = `<p class="sale-location" style="color:#666; font-size:0.9em; margin-top:4px;">📍 ${address}</p>`;
+                }
+                
+                // Adds cursor pointer if there's a proof image
+                const hasProof = t.proofFilename && (t.paymentMethod === 'QRIS' || t.paymentMethod === 'BANK TRANSFER');
+                if (hasProof) {
+                    row.style.cursor = 'pointer';
+                    row.title = 'Click to view payment proof';
+                }
+                
+                row.innerHTML = `
+                    <div class="sale-left">
+                        <p class="sale-title">${title}</p>
+                        <p class="sale-amount">${formatCurrency(t.total)}</p>
+                        <p class="sale-date">${t.date}</p>
+                        ${productList ? `<p class="sale-products">${productList}</p>` : ''}
+                        ${locationHTML}
+                    </div>
+                    <div class="sale-right">
+                        <p class="sale-count">${t.itemCount} Item${t.itemCount>1? 's':''}</p>
+                        <p class="sale-method">${t.paymentMethod}</p>
+                    </div>
+                `;
+                
+                // Adds click handler to show payment proof
+                if (hasProof) {
+                    row.addEventListener('click', () => {
+                        showPaymentProof(t.proofFilename, t.id);
+                    });
+                }
+                
+                container.appendChild(row);
+            });
+        }
+        
+        function showPaymentProof(filename, saleId) {
+            // Creates modal overlay
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); display:flex; align-items:center; justify-content:center; z-index:1000; padding:20px;';
+            
+            // Creates modal content
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position:relative; max-width:90%; max-height:90%; background:white; border-radius:12px; padding:20px; box-shadow:0 4px 20px rgba(0,0,0,0.5);';
+            
+            // Adds a title
+            const title = document.createElement('h3');
+            title.textContent = 'Payment Proof - Sale #' + saleId;
+            title.style.cssText = 'margin:0 0 16px 0; text-align:center;';
+            modal.appendChild(title);
+            
+            // Adds an image
+            const img = document.createElement('img');
+            img.src = '/payment-proofs/' + filename;
+            img.alt = 'Payment proof';
+            img.style.cssText = 'max-width:100%; max-height:70vh; display:block; margin:0 auto; border-radius:8px;';
+            modal.appendChild(img);
+            
+            // Adds a close button
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = 'Close';
+            closeBtn.style.cssText = 'margin-top:16px; padding:10px 24px; background:#333; color:white; border:none; border-radius:8px; cursor:pointer; display:block; margin-left:auto; margin-right:auto;';
+            closeBtn.addEventListener('click', () => document.body.removeChild(overlay));
+            modal.appendChild(closeBtn);
+            
+            overlay.appendChild(modal);
+            
+            // Closes on the overlay click
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    document.body.removeChild(overlay);
+                }
+            });
+            
+            document.body.appendChild(overlay);
+        }
+
+        let allTransactions = [];
+
+        async function loadTransactions() {
+            try {
+                let url = '/transactions';
+                const username = localStorage.getItem('username');
+                if (username) url += '?username=' + encodeURIComponent(username);
+                
+                const res = await fetch(url);
+                const data = await res.json();
+                allTransactions = data;
+                applyFilter();
+            } catch (err) {
+                console.error('Failed to load transactions', err);
+                allTransactions = [];
+                applyFilter();
+            }
+        }
+
+        function applyFilter(){
+            const search = document.getElementById('txn-search');
+            const filter = document.getElementById('txn-filter');
+            const q = (search.value || '').toLowerCase().trim();
+            const f = filter.value;
+            const filtered = allTransactions.filter(t => {
+                if (f !== 'all' && t.paymentMethod.toLowerCase() !== f) return false;
+                if (!q) return true;
+                const title = 'Sale #' + t.id;
+                return title.toLowerCase().includes(q) || String(t.total).includes(q) || t.date.includes(q);
+            });
+            renderList(filtered);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const search = document.getElementById('txn-search');
+            const filter = document.getElementById('txn-filter');
+            search.addEventListener('input', applyFilter);
+            filter.addEventListener('change', applyFilter);
+            loadTransactions();
+        });
+    </script>
+
+</body>
+</html>

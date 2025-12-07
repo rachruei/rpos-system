@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Add To Inventory</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="auth-page">
+  <nav class="top-nav">
+    <div class="nav-inner">
+      <div class="nav-left">
+        <h1>Add To Inventory</h1>
+      </div>
+      <div class="nav-right">
+        <a class="back-link" href="inventory.html">Back</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="page-content">
+    <main class="create-main">
+      <form class="create-form" method="POST" action="/products" enctype="multipart/form-data">
+        <div class="upload-box">
+          <input id="image-input" type="file" name="image" accept="image/*" style="display:none">
+          <div class="upload-placeholder" id="upload-placeholder">Upload Image</div>
+        </div>
+
+        <input type="text" name="title" placeholder="Title" required>
+        <textarea name="description" placeholder="Description"></textarea>
+        <input type="text" name="price" placeholder="IDR">
+
+        <div class="qty-row">
+          <button type="button" class="qty-btn" id="qty-dec">-</button>
+          <input type="number" name="stock" id="stock-input" value="1" min="0">
+          <button type="button" class="qty-btn" id="qty-inc">+</button>
+        </div>
+
+        <button class="upload-btn" type="submit">Upload</button>
+      </form>
+    </main>
+  </div>
+
+  <script>
+    // make the upload-box clickable to choose a file and show preview
+    document.addEventListener('DOMContentLoaded', () => {
+      const uploadBox = document.querySelector('.upload-box');
+      const fileInput = document.getElementById('image-input');
+      const placeholder = document.getElementById('upload-placeholder');
+
+      uploadBox.addEventListener('click', () => {
+        fileInput.click();
+      });
+
+      let latestPreviewData = null;
+      fileInput.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) {
+          // this restore placeholder text
+          placeholder.innerHTML = 'Upload Image';
+          return;
+        }
+        // this shows only preview image files
+        if (!file.type.startsWith('image/')) {
+          placeholder.innerHTML = 'Selected file is not an image';
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function (ev) {
+          // this create an img and fill the placeholder
+          placeholder.innerHTML = '';
+          const img = document.createElement('img');
+          img.src = ev.target.result;
+          // this keep preview data so we can stash it before submitting
+          latestPreviewData = ev.target.result;
+          img.alt = 'preview';
+          img.style.width = '100%';
+          img.style.height = '100%';
+          img.style.objectFit = 'cover';
+          img.style.borderRadius = '16px';
+          placeholder.appendChild(img);
+        };
+        reader.readAsDataURL(file);
+      });
+
+      // before the form submits, this will save the preview (if any) to your localStorage
+      const form = document.querySelector('.create-form');
+      form.addEventListener('submit', function () {
+        // this will store the written title and preview to the inventory so it can show immediately after redirect
+        try {
+          const title = (form.querySelector('input[name="title"]').value || '').trim();
+          if (latestPreviewData) {
+            localStorage.setItem('recentProductPreview', JSON.stringify({ title, preview: latestPreviewData }));
+          }
+          // if we have a username saved in localStorage, send it to the form action so server can assign owner
+          try {
+            const username = localStorage.getItem('username');
+            if (username) {
+              // this append as query param
+              form.action = form.action + '?username=' + encodeURIComponent(username);
+            }
+          } catch(e){}
+        } catch (e) {
+          // this ignores any storage errors
+        }
+        // this allows for normal form submission to continue
+      });
+
+      const qtyDec = document.getElementById('qty-dec');
+      const qtyInc = document.getElementById('qty-inc');
+      const stockInput = document.getElementById('stock-input');
+      qtyDec.addEventListener('click', () => { stockInput.value = Math.max(0, Number(stockInput.value) - 1); });
+      qtyInc.addEventListener('click', () => { stockInput.value = Number(stockInput.value) + 1; });
+    });
+  </script>
+</body>
+</html>

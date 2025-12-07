@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Order Summary</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="top-nav">
+    <div class="nav-inner">
+      <div class="nav-left"><h1>Order Summary</h1></div>
+      <div class="nav-right">
+        <a class="back-link" href="transactions.html">New Order</a>
+        <a class="back-link" href="dashboard.html">Back</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="page-content">
+    <main class="summary-main">
+      <div class="summary-container">
+        <div class="summary-header">
+          <h2>Complete this Order!</h2>
+          <div class="summary-date" id="order-date"></div>
+        </div>
+        
+        <div class="summary-items-header">
+          <div class="header-product">Product</div>
+          <div class="header-qty">QTY</div>
+          <div class="header-total">Total</div>
+        </div>
+        
+        <div class="summary-items" id="summary-items">
+          <!-- Order items will be rendered here -->
+        </div>
+
+        <div class="summary-footer">
+          <div class="summary-total-row">
+            <span class="summary-label">Total:</span>
+            <span class="summary-total-value" id="summary-total">IDR 0</span>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="payment-methods">
+        <button class="btn-payment-method" id="btn-cash">CASH</button>
+        <button class="btn-payment-method" id="btn-qris">QRIS</button>
+        <button class="btn-payment-method" id="btn-bank">BANK TRANSFER</button>
+      </div>
+
+      <div class="proof-upload-container" id="proof-container" style="display: none;">
+        <label for="proof-upload" class="btn-proof-upload" id="proof-upload-label">
+          <span id="proof-upload-text">Proof of payment to complete transaction</span>
+          <input type="file" id="proof-upload" accept="image/*" capture="environment" style="display: none;">
+        </label>
+      </div>
+
+      <div class="location-display" id="location-display" style="display: none;">
+        <div class="location-text" id="location-text">📍 Getting location...</div>
+      </div>
+
+      <div class="confirm-order-container">
+        <button id="confirm-order-btn" class="btn-confirm-order" style="display: none;">Confirm Order</button>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    let selectedPaymentMethod = null;
+    let uploadedProofFile = null;
+    let transactionLocation = null;
+
+    // this Capture user's geolocation
+    function captureLocation() {
+      const locationDisplay = document.getElementById('location-display');
+      const locationText = document.getElementById('location-text');
+      
+      if (!navigator.geolocation) {
+        locationText.textContent = '📍 Location not available';
+        locationDisplay.style.display = 'block';
+        return;
+      }
+
+      locationDisplay.style.display = 'block';
+      locationText.textContent = '📍 Getting location...';
+
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          
+          try {
+            // Get readable location from coordinates
+            const response = await fetch(`/api/geocode?lat=${lat}&lng=${lng}`);
+            const data = await response.json();
+            
+            if (data.formatted_address) {
+              transactionLocation = {
+                address: data.formatted_address,
+                coordinates: { lat, lng }
+              };
+              locationText.textContent = `📍 Transaction created at: ${data.formatted_address}`;
+            } else {
+              transactionLocation = {
+                address: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+                coordinates: { lat, lng }
+              };
+              locationText.textContent = `📍 Transaction created at: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+            }
+          } catch (error) {
+            console.error('Failed to get location name:', error);
+            transactionLocation = {
+              address: `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+              coordinates: { lat, lng }
+            };
+            locationText.textContent = `📍 Transaction created at: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+          }
+        },
+        (error) => {
+          console.error('Geolocation error:', error);
+          locationText.textContent = '📍 Location unavailable';
+          transactionLocation = null;
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 5000,
+          maximumAge: 0
+        }
+      );
+    }
+
+    function loadOrderSummary() {
+      try {
+        // Gets the order data from localStorage (it is set by transactions page before navigating)
+        const orderData = JSON.parse(localStorage.getItem('completedOrder') || '[]');
+        
+        if (!orderData.length) {
+          document.getElementById('summary-items').innerHTML = '<p class="no-transactions">No order data found.</p>';
+          return;
+        }
+
+        // Displays the current date
+        const dateEl = document.getElementById('order-date');
+        const now = new Date();
+        dateEl.textContent = now.toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+
+        // Renders order items
+        const container = document.getElementById('summary-items');
+        container.innerHTML = '';
+        let grandTotal = 0;
+
+        orderData.forEach(item => {
+          const qty = Number(item.qty || 1);
+          const price = Number(item.price || 0);
+          const lineTotal = qty * price;
+          grandTotal += lineTotal;
+
+          const row = document.createElement('div');
+          row.className = 'summary-item-row';
+          row.innerHTML = `
+            <div class="summary-item-product">
+              <div class="summary-item-title">${item.title}</div>
+              <div class="summary-item-price">IDR ${price.toLocaleString()}</div>
+            </div>
+            <div class="summary-item-qty">${qty}</div>
+            <div class="summary-item-total">IDR ${lineTotal.toLocaleString()}</div>
+          `;
+          container.appendChild(row);
+        });
+
+        // Updates the grand total
+        const totalEl = document.getElementById('summary-total');
+        if (totalEl) totalEl.textContent = 'IDR ' + grandTotal.toLocaleString();
+
+        // Clears the completed order data after displaying
+
+      } catch (e) {
+        console.error('Failed to load order summary', e);
+      }
+    }
+
+    function setupPaymentMethods() {
+      const cashBtn = document.getElementById('btn-cash');
+      const qrisBtn = document.getElementById('btn-qris');
+      const bankBtn = document.getElementById('btn-bank');
+      const proofContainer = document.getElementById('proof-container');
+      const proofUpload = document.getElementById('proof-upload');
+      const proofLabel = document.getElementById('proof-upload-label');
+      const proofText = document.getElementById('proof-upload-text');
+
+      // CASH button handler
+      cashBtn.addEventListener('click', () => {
+        selectedPaymentMethod = 'CASH';
+        cashBtn.classList.add('selected');
+        qrisBtn.classList.remove('selected');
+        bankBtn.classList.remove('selected');
+        
+        // Show proof upload button but makes it disabled/grey why user clicks on CASH
+        proofContainer.style.display = 'flex';
+        proofLabel.style.pointerEvents = 'none';
+        proofLabel.style.opacity = '0.5';
+        proofLabel.style.cursor = 'not-allowed';
+        proofLabel.classList.add('disabled');
+        uploadedProofFile = null; // Resets the uploaded file
+        proofText.textContent = 'Proof of payment to complete transaction';
+        
+        // Shows the confirm button once upload image is fulfilled
+        document.getElementById('confirm-order-btn').style.display = 'block';
+      });
+
+      // QRIS button handler
+      qrisBtn.addEventListener('click', () => {
+        selectedPaymentMethod = 'QRIS';
+        qrisBtn.classList.add('selected');
+        cashBtn.classList.remove('selected');
+        bankBtn.classList.remove('selected');
+        
+        // Show proof upload button (required for QRIS) enables the button for it
+        proofContainer.style.display = 'flex';
+        proofLabel.style.pointerEvents = 'auto';
+        proofLabel.style.opacity = '1';
+        proofLabel.style.cursor = 'pointer';
+        proofLabel.classList.remove('disabled');
+        uploadedProofFile = null; // Resets the uploaded file
+        proofText.textContent = 'Proof of payment to complete transaction';
+        
+        // Hides confirm button until proof is uploaded
+        document.getElementById('confirm-order-btn').style.display = 'none';
+      });
+
+      // BANK TRANSFER button handler
+      bankBtn.addEventListener('click', () => {
+        selectedPaymentMethod = 'BANK TRANSFER';
+        bankBtn.classList.add('selected');
+        cashBtn.classList.remove('selected');
+        qrisBtn.classList.remove('selected');
+        
+        // Show proof upload button (required for Bank Transfer) enables the button for it
+        proofContainer.style.display = 'flex';
+        proofLabel.style.pointerEvents = 'auto';
+        proofLabel.style.opacity = '1';
+        proofLabel.style.cursor = 'pointer';
+        proofLabel.classList.remove('disabled');
+        uploadedProofFile = null; // Reset uploaded file
+        proofText.textContent = 'Proof of payment to complete transaction';
+        
+        // Hides confirm button until proof is uploaded
+        document.getElementById('confirm-order-btn').style.display = 'none';
+      });
+
+      // File upload handler
+      proofUpload.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // Uploads the proof image to the server
+        const formData = new FormData();
+        formData.append('proof', file);
+        
+        proofText.textContent = 'Uploading...';
+        
+        fetch('/upload-payment-proof', {
+          method: 'POST',
+          body: formData
+        })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Upload failed');
+          }
+          return response.json();
+        })
+        .then(data => {
+          console.log('Upload successful', data);
+          uploadedProofFile = data.filename; // Stores the filename
+          proofText.textContent = '✓ Proof uploaded: ' + file.name;
+          proofLabel.classList.add('uploaded');
+          
+          // Shows confirm button after proof is uploaded
+          document.getElementById('confirm-order-btn').style.display = 'block';
+        })
+        .catch(error => {
+          console.error('Upload failed', error);
+          alert('Failed to upload proof of payment');
+          proofText.textContent = 'Proof of payment to complete transaction';
+          uploadedProofFile = null;
+        });
+      });
+    }
+
+    function completeTransaction() {
+      console.log('completeTransaction called');
+      console.log('selectedPaymentMethod:', selectedPaymentMethod);
+      console.log('uploadedProofFile:', uploadedProofFile);
+      
+      // Validates the payment method selection
+      if (!selectedPaymentMethod) {
+        alert('Please select a payment method (CASH or QRIS)');
+        return;
+      }
+
+      // For QRIS and Bank Transfer, proof is required (for CASH, no proof is needed)
+      if ((selectedPaymentMethod === 'QRIS' || selectedPaymentMethod === 'BANK TRANSFER') && !uploadedProofFile) {
+        alert('Please upload proof of payment for ' + selectedPaymentMethod + ' transactions');
+        return;
+      }
+
+      // The transaction is valid, proceeds to save/log
+      const orderData = JSON.parse(localStorage.getItem('completedOrder') || '[]');
+      console.log('Order data:', orderData);
+      
+      if (!orderData || !orderData.length) {
+        alert('No order data found. Please start a new order.');
+        window.location.href = 'transactions.html';
+        return;
+      }
+      
+      // Saves the transaction to server
+      let url = '/transactions';
+      const username = localStorage.getItem('username');
+      if (username) url += '?username=' + encodeURIComponent(username);
+      
+      console.log('Sending POST to:', url);
+      const payload = {
+        items: orderData,
+        paymentMethod: selectedPaymentMethod,
+        proofUploaded: !!uploadedProofFile,
+        proofFilename: uploadedProofFile, // Includes the uploaded filename
+        location: transactionLocation, // Includes location data
+        timestamp: new Date().toISOString()
+      };
+      console.log('Payload:', payload);
+      
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(response => {
+        console.log('Response status:', response.status);
+        if (!response.ok) {
+          return response.text().then(text => {
+            throw new Error('Server error: ' + text);
+          });
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log('Transaction logged successfully:', data);
+        // Clears order data and redirects
+        localStorage.removeItem('completedOrder');
+        alert('Transaction completed successfully!');
+        window.location.href = 'dashboard.html';
+      })
+      .catch(error => {
+        console.error('Transaction logging failed:', error);
+        alert('Failed to complete transaction: ' + error.message);
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadOrderSummary();
+      setupPaymentMethods();
+      captureLocation(); // Captures location when page loads
+      
+      // Wire up Confirm Order button
+      document.getElementById('confirm-order-btn').addEventListener('click', completeTransaction);
+    });
+  </script>
+</body>
+</html>

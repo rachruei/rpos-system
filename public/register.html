@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Register</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="auth-page">
+  <div class="login-rectangle">
+    <h2>Register</h2>
+    <form method="POST" action="/register" id="register-form">
+      <input type="text" name="username" placeholder="Username" required>
+      <input type="email" name="email" placeholder="Email" required>
+      <input type="password" name="password" id="password" placeholder="Password" required>
+      <input type="password" name="confirmPassword" id="confirmPassword" placeholder="Confirm Password" required>
+      <div id="pw-error" class="form-error" aria-live="polite"></div>
+      <button type="submit">Register</button>
+    </form>
+
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        const form = document.getElementById('register-form');
+        const pw = document.getElementById('password');
+        const cp = document.getElementById('confirmPassword');
+        const err = document.getElementById('pw-error');
+
+        function validate() {
+          if (!pw.value && !cp.value) {
+            err.textContent = '';
+            err.style.display = 'none';
+            return true;
+          }
+          if (pw.value !== cp.value) {
+            err.textContent = 'Passwords do not match';
+            err.style.display = 'block';
+            return false;
+          }
+          err.textContent = '';
+          err.style.display = 'none';
+          return true;
+        }
+
+        pw.addEventListener('input', validate);
+        cp.addEventListener('input', validate);
+
+        form.addEventListener('submit', function (e) {
+          if (!validate()) {
+            e.preventDefault();
+            cp.focus();
+          }
+        });
+      });
+    </script>
+     <div class="divider"></div>
+  <button class="login-btn" onclick="window.location.href='index.html'">Login</button>
+  </div>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Sticky top navigation with Logout button (matches history nav style) -->
+  <nav class="top-nav">
+    <div class="nav-inner">
+      <h1>RPOS Dashboard</h1>
+      <a class="back-link" href="/" id="logout-link">Logout</a>
+    </div>
+  </nav>
+  <div class="page-content">
+  <!-- Main dashboard content -->
+  <main class="dashboard-main">
+    <div class="dashboard-buttons">
+      <div class="dashboard-btn" onclick="window.location.href='inventory.html'">
+        <div class="dashboard-img" id="inventory-img">
+          <img src="Logo Assets/Inventory.png" alt="Inventory">
+        </div>
+        <div class="dashboard-label">Inventory</div>
+      </div>
+      <div class="dashboard-btn" onclick="window.location.href='transactions.html'">
+        <div class="dashboard-img" id="transactions-img">
+          <img src="Logo Assets/Transactions.png" alt="Transactions">
+        </div>
+        <div class="dashboard-label">Transactions</div>
+      </div>
+      <div class="dashboard-btn" onclick="window.location.href='history.html'">
+        <div class="dashboard-img" id="history-img">
+          <img src="Logo Assets/History.png" alt="History">
+        </div>
+        <div class="dashboard-label">History</div>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+  // If the server is redirected to this page with ?user=NAME, this will save to localStorage and clean the URL.
+  (function(){
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const user = params.get('user');
+      if (user) {
+        localStorage.setItem('username', user);
+        // this will remove query param from URL for cleanliness
+        const url = new URL(window.location.href);
+        url.searchParams.delete('user');
+        window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
+      }
+    } catch(e){}
+  })();
+</script>
+</body>
+</html>

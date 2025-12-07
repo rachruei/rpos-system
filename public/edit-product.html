@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Edit Product</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="auth-page">
+  <nav class="top-nav">
+    <div class="nav-inner">
+      <div class="nav-left">
+        <h1>Edit Product</h1>
+      </div>
+      <div class="nav-right">
+        <a class="back-link" href="inventory.html">Back</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="page-content">
+    <main class="create-main">
+      <form id="edit-form" class="create-form" method="POST" enctype="multipart/form-data">
+        <label class="upload-box">
+          <input id="image-input" type="file" name="image" accept="image/*" style="display:none">
+          <div class="upload-placeholder" id="upload-placeholder">Current Image</div>
+        </label>
+
+        <input id="title" type="text" name="title" placeholder="Title" required>
+        <textarea id="description" name="description" placeholder="Description"></textarea>
+        <input id="price" type="text" name="price" placeholder="IDR">
+
+        <div class="qty-row">
+          <button type="button" class="qty-btn" id="qty-dec">-</button>
+          <input type="number" name="stock" id="stock-input" value="1" min="0">
+          <button type="button" class="qty-btn" id="qty-inc">+</button>
+        </div>
+
+        <button class="upload-btn" type="submit">Save Changes</button>
+      </form>
+    </main>
+  </div>
+
+  <script>
+    // this is a helper to get the query params
+    function getParam(name) {
+      const params = new URLSearchParams(window.location.search);
+      return params.get(name);
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const id = getParam('id');
+      const form = document.getElementById('edit-form');
+      const titleEl = document.getElementById('title');
+      const descEl = document.getElementById('description');
+      const priceEl = document.getElementById('price');
+      const stockInput = document.getElementById('stock-input');
+      const uploadBox = document.querySelector('.upload-box');
+      const fileInput = document.getElementById('image-input');
+      const placeholder = document.getElementById('upload-placeholder');
+
+      if (!id) {
+        placeholder.textContent = 'No product id provided';
+        return;
+      }
+
+      // fetches products (include local username fallback so server can return owned products to it's user)
+      try {
+        let url = '/products';
+        try {
+          const storedUser = localStorage.getItem('username');
+          if (storedUser) url += '?username=' + encodeURIComponent(storedUser);
+        } catch(e) { /* ignore any localStorage errors */ }
+        const res = await fetch(url);
+        const products = await res.json();
+        const product = products.find(p => String(p.id) === String(id));
+        if (!product) {
+          placeholder.textContent = 'Product not found';
+        } else {
+          titleEl.value = product.title || '';
+          descEl.value = product.description || '';
+          priceEl.value = product.price || '';
+          stockInput.value = product.stock || 0;
+
+          if (product.image) {
+            placeholder.innerHTML = '';
+            const img = document.createElement('img');
+            img.src = '/uploads/' + product.image;
+            img.alt = product.title || 'image';
+            img.style.width = '100%';
+            img.style.height = '100%';
+            img.style.objectFit = 'cover';
+            img.style.borderRadius = '16px';
+            placeholder.appendChild(img);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load product', e);
+      }
+
+      // its the wire upload box and preview
+      uploadBox.addEventListener('click', () => fileInput.click());
+      let latestPreviewData = null;
+      fileInput.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) {
+          placeholder.innerHTML = 'Current Image';
+          return;
+        }
+        if (!file.type.startsWith('image/')) {
+          placeholder.innerHTML = 'Selected file is not an image';
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = function (ev) {
+          placeholder.innerHTML = '';
+          const img = document.createElement('img');
+          img.src = ev.target.result;
+          img.alt = 'preview';
+          img.style.width = '100%';
+          img.style.height = '100%';
+          img.style.objectFit = 'cover';
+          img.style.borderRadius = '16px';
+          placeholder.appendChild(img);
+          latestPreviewData = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+
+      // sets the form action to include id
+      // includes username in the POST action when available so server can receive owner fallback
+      try {
+        const storedUser = localStorage.getItem('username');
+        form.action = '/products/' + encodeURIComponent(id) + (storedUser ? ('?username=' + encodeURIComponent(storedUser)) : '');
+      } catch(e){
+        form.action = '/products/' + encodeURIComponent(id);
+      }
+
+      // qty buttons
+      const qtyDec = document.getElementById('qty-dec');
+      const qtyInc = document.getElementById('qty-inc');
+      qtyDec.addEventListener('click', () => { stockInput.value = Math.max(0, Number(stockInput.value) - 1); });
+      qtyInc.addEventListener('click', () => { stockInput.value = Number(stockInput.value) + 1; });
+
+    });
+  </script>
+</body>
+</html>
